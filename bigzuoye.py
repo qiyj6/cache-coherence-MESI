@@ -23,7 +23,17 @@ class cache_line:
         self.data = []
     def cache_data_init(self):
         for i in range(cache_line_databyte):
-            self.data.append(bin(i)[2:].rjust(8,'0'))
+            # self.data.append(bin(i)[2:].rjust(8,'0'))
+            self.data.append('00000000')
+
+# class bus:
+#     def __init__(self, state=0,op_addr=0,data='-1'):
+#         self.state = state
+#         self.op_addr = op_addr
+#         self.data = data
+#     def bus_release(self):
+#         self.data='-1'
+#         self.state=0
 
 
 def read_file(file_path,op_n,op_address_n):
@@ -40,9 +50,9 @@ def read_file(file_path,op_n,op_address_n):
 
 
 def cache_set_print(cache_num,index,data_offset):
-    cache_set_title = PT(['set num', 'cache line num', 'tag', 'state','data[%d]'%data_offset])
+    cache_set_title = PT(['index', 'cache line num', 'tag', 'state','data[%d]'%data_offset])
     for i in range(cache_line_per_set):
-        cache_set_title.add_row([index,i,cache_num[index][i].tag,cache_num[index][i].state,cache_num[index][i].data[data_offset]])
+        cache_set_title.add_row([index,i,hex(cache_num[index][i].tag),cache_num[index][i].state,cache_num[index][i].data[data_offset]])
     return cache_set_title
 
 def decode_address(op_address_n):
@@ -72,16 +82,17 @@ def mem_init():
             data_list=[]
             mem_set.append(data_list)
             for k in range(data_num):            
-                x=bin(k)
-                x=x[2:].rjust(16,'0')
-                data_list.append(x[8:16])
+                data_list.append('10000001')
     return mem_list
 
-def mem_print(mem_data,tag,index):
+def mem_print(mem_data,tag,index,offset):
     mem_addr_high=tag*256+index*64
     cache_set_title = PT(['mem address', 'data'])
-    for i in range(data_num):
-        cache_set_title.add_row([str(hex(mem_addr_high+i)).rjust(4,'0'),mem_data[i]])
+    if(offset==-1):
+        for i in range(data_num):
+            cache_set_title.add_row([str(hex(mem_addr_high+i)).rjust(4,'0'),mem_data[i]])
+    else:
+        cache_set_title.add_row([str(hex(mem_addr_high+offset)).rjust(4,'0'),mem_data[offset]])
     return cache_set_title
 
 def cache_HorM(cache_num,index,tag):    #返回命中cache组内偏移
@@ -117,25 +128,25 @@ def apply_cache_line(cache_set,mem_data,tag):
         cache_set[num].data=mem_data
     return cache_set,mem_data,num
 
-def cache_op_hit(cache_op_d,cache_op_id,mem_list,index,tag,offset_in_set_d,op,offset_num):
+def cache_op_hit(cache_op_d,cache_op_id,mem_list,index,tag,offset_in_set_d,op,offset_num,data_i):
     if(op==1):
         if(cache_op_d[index][offset_in_set_d].state==EXCLUSIVE):
-            cache_op_d[index][offset_in_set_d].data[offset_num]='10011001'
+            cache_op_d[index][offset_in_set_d].data[offset_num]=bin(data_i)[2:].rjust(8,'0')
             cache_op_d[index][offset_in_set_d].state=MODIFIED
         elif(cache_op_d[index][offset_in_set_d].state==SHARED):
-            cache_op_d[index][offset_in_set_d].data[offset_num]='10011001'
+            cache_op_d[index][offset_in_set_d].data[offset_num]=bin(data_i)[2:].rjust(8,'0')
             mem_list[tag][index]=cache_op_d[index][offset_in_set_d].data
             cache_op_d[index][offset_in_set_d].state=EXCLUSIVE
             offset_in_set_id=cache_HorM(cache_op_id,index,tag)  
             if(offset_in_set_id!=-1):    #其他cache命中
                 cache_op_id[index][offset_in_set_id].state=INVALID
         else:   #处于M状态，改数据，状态不变
-            cache_op_d[index][offset_in_set_d].data[offset_num]='10011001'
+            cache_op_d[index][offset_in_set_d].data[offset_num]=bin(data_i)[2:].rjust(8,'0')
         
     return cache_op_d,cache_op_id,mem_list
 
 
-def cache_op_miss(cache_op_d,cache_op_id,mem_list,index,tag,op,offset_num):
+def cache_op_miss(cache_op_d,cache_op_id,mem_list,index,tag,op,offset_num,data_i):
     cache_op_id_hit=cache_HorM(cache_op_id,index,tag) #值为其他cache命中的cache line组内偏移
     if(op==0):
         if(cache_op_id_hit==-1): #其他cache line也不命中
@@ -157,14 +168,14 @@ def cache_op_miss(cache_op_d,cache_op_id,mem_list,index,tag,op,offset_num):
         # print('leng=',len(cache_op_d[index][2].data))
         if(cache_op_id_hit==-1): #其他cache不命中
             cache_op_d[index],mem_list[tag][index],offset_in_set=apply_cache_line(cache_op_d[index],mem_list[tag][index],tag)
-            cache_op_d[index][offset_in_set].data[offset_num]='10011001'
+            cache_op_d[index][offset_in_set].data[offset_num]=bin(data_i)[2:].rjust(8,'0')
             mem_list[tag][index]=cache_op_d[index][offset_in_set].data
             cache_op_d[index][offset_in_set].state=EXCLUSIVE
         else: #其他cache命中
             if(cache_op_id[index][cache_op_id_hit].state==EXCLUSIVE or SHARED):
                 cache_op_id[index][cache_op_id_hit].state=INVALID
                 cache_op_d[index],mem_list[tag][index],offset_in_set=apply_cache_line(cache_op_d[index],mem_list[tag][index],tag)
-                cache_op_d[index][offset_in_set].data[offset_num]='10011001'
+                cache_op_d[index][offset_in_set].data[offset_num]=bin(data_i)[2:].rjust(8,'0')
                 mem_list[tag][index]=cache_op_d[index][offset_in_set].data
                 cache_op_d[index][offset_in_set].state=EXCLUSIVE
             else:
@@ -172,7 +183,7 @@ def cache_op_miss(cache_op_d,cache_op_id,mem_list,index,tag,op,offset_num):
                 cache_op_id[index][cache_op_id_hit].state=INVALID
 
                 cache_op_d[index],mem_list[tag][index],offset_in_set=apply_cache_line(cache_op_d[index],mem_list[tag][index],tag) #从主存中加载数据
-                cache_op_d[index][offset_in_set].data[offset_num]='10011001'
+                cache_op_d[index][offset_in_set].data[offset_num]=bin(data_i)[2:].rjust(8,'0')
                 mem_list[tag][index]=cache_op_d[index][offset_in_set].data
                 cache_op_d[index][offset_in_set].data=EXCLUSIVE
 
@@ -183,8 +194,8 @@ op_0=[]
 op_address_0=[]
 op_1=[]
 op_address_1=[]
-file_path_t0='C:/Users/quark/Desktop/bigzuoye/trace0.txt'
-file_path_t1='C:/Users/quark/Desktop/bigzuoye/trace1.txt'
+file_path_t0='C:/Users/zbl/Desktop/bigzuoye/trace0.txt'
+file_path_t1='C:/Users/zbl/Desktop/bigzuoye/trace1.txt'
 
 op_0,op_address_0=read_file(file_path_t0,op_0,op_address_0)
 op_1,op_address_1=read_file(file_path_t1,op_1,op_address_1)
@@ -199,25 +210,40 @@ for i in range(max(len(op_1),len(op_0))):
     cache_0_hit=cache_HorM(cache_num=cache_0,index=index_0,tag=tag_0)
     cache_1_hit=cache_HorM(cache_num=cache_1,index=index_1,tag=tag_1)
     print('第%d次cache_0操作'%(i+1), op_0[i],'地址0x%08x'%op_address_0[i])
-    print('第%d次cache_1操作'%(i+1), op_1[i],'地址0x%08x'%op_address_1[i])
+    print('第%d次cache_1操作'%(i+1), op_1[i],'地址0x%08x\n'%op_address_1[i])
     print('第%d次cache_0操作前cache set如下'%(i+1))
     print(cache_set_print(cache_0,index_0,offset_0))
     print('第%d次cache_1操作前cache set如下'%(i+1))
-    print(cache_set_print(cache_1,index_1,offset_1))
-    if(cache_0_hit!=-1):
-        cache_0,cache_1,mem_list=cache_op_hit(cache_0,cache_1,mem_list,index_0,tag_0,cache_0_hit,op_0[i],offset_0)
-    else:
-        cache_0,cache_1,mem_list=cache_op_miss(cache_0,cache_1,mem_list,index_0,tag_0,op_0[i],offset_0)
+    print(cache_set_print(cache_1,index_1,offset_1),'\n')
+    if(op_1[i]==1 and op_0[i]==0 and op_address_0[i]==op_address_1[i]):
+        if(cache_1_hit!=-1):
+            cache_1,cache_0,mem_list=cache_op_hit(cache_1,cache_0,mem_list,index_1,tag_1,cache_1_hit,op_1[i],offset_1,i+1)
+        else:
+            cache_1,cache_0,mem_list=cache_op_miss(cache_1,cache_0,mem_list,index_1,tag_1,op_1[i],offset_1,i+1)
+
+        cache_0_hit=cache_HorM(cache_num=cache_0,index=index_0,tag=tag_0)
+
+        if(cache_0_hit!=-1):
+            cache_0,cache_1,mem_list=cache_op_hit(cache_0,cache_1,mem_list,index_0,tag_0,cache_0_hit,op_0[i],offset_0,i+1)
+        else:
+            cache_0,cache_1,mem_list=cache_op_miss(cache_0,cache_1,mem_list,index_0,tag_0,op_0[i],offset_0,i+1)
         
-    if(cache_1_hit!=-1):
-        cache_1,cache_0,mem_list=cache_op_hit(cache_1,cache_0,mem_list,index_1,tag_1,cache_1_hit,op_1[i],offset_1)
     else:
-        cache_1,cache_0,mem_list=cache_op_miss(cache_1,cache_0,mem_list,index_1,tag_1,op_1[i],offset_1)
+        if(cache_0_hit!=-1):
+            cache_0,cache_1,mem_list=cache_op_hit(cache_0,cache_1,mem_list,index_0,tag_0,cache_0_hit,op_0[i],offset_0,i+1)
+        else:
+            cache_0,cache_1,mem_list=cache_op_miss(cache_0,cache_1,mem_list,index_0,tag_0,op_0[i],offset_0,i+1)
+            
+        cache_1_hit=cache_HorM(cache_num=cache_1,index=index_1,tag=tag_1)
+        
+        if(cache_1_hit!=-1):
+            cache_1,cache_0,mem_list=cache_op_hit(cache_1,cache_0,mem_list,index_1,tag_1,cache_1_hit,op_1[i],offset_1,i+1)
+        else:
+            cache_1,cache_0,mem_list=cache_op_miss(cache_1,cache_0,mem_list,index_1,tag_1,op_1[i],offset_1,i+1)
     
     print('第%d次cache_0操作后cache set如下'%(i+1))
     print(cache_set_print(cache_0,index_0,offset_0))
     print('第%d次cache_1操作后cache set如下'%(i+1))
     print(cache_set_print(cache_1,index_1,offset_1))
-    print('#################################################### 操作分割线 ####################################################' )
-
-print(mem_print(mem_list[tag_0][index_0],tag_0,index_0))
+    print(mem_print(mem_list[tag_0][index_0],tag_0,index_0,offset_0))
+    print('#################################################### 第%d次操作分割线 ####################################################'%(i+1) )
