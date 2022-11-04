@@ -5,7 +5,9 @@ INVALID='I'
 EXCLUSIVE='E'
 SHARED='S'
 MODIFIED='M'
-NONE=0
+mem_id=2
+the_other_cache_id=1
+all_device=3
 
 cache_line_num=8
 set_num=4
@@ -26,14 +28,35 @@ class cache_line:
             # self.data.append(bin(i)[2:].rjust(8,'0'))
             self.data.append('00000000')
 
-# class bus:
-#     def __init__(self, state=0,op_addr=0,data='-1'):
-#         self.state = state
-#         self.op_addr = op_addr
-#         self.data = data
-#     def bus_release(self):
-#         self.data='-1'
-#         self.state=0
+class bus(): #地址信号，数据信号，数据有效信号,状态信号(总线是否被占用)，读写广播信号，读写广播响应
+    def __init__(self):
+        self.state = 0
+        self.tag = -1
+        self.index = -1
+        self.data = []
+        self.data_valid=0
+        self.broadcast=-1
+        self.response=0
+        self.state_response = []
+        self.device_id=-1
+    def available(self):
+        self.state = 0
+        self.tag = -1
+        self.index = -1
+        self.data = []
+        self.broadcast=-1
+        self.response=0
+        self.state_response = []
+        self.device_id=-1
+        self.data_valid=0
+    def occuied(self,tag,index,broadcast,device_id,data_valid=0,data=[]):
+        self.tag = tag
+        self.index = index
+        self.data=data
+        self.state=1
+        self.broadcast=broadcast
+        self.device_id=device_id
+        self.data_valid=data_valid
 
 
 def read_file(file_path,op_n,op_address_n):
@@ -95,97 +118,135 @@ def mem_print(mem_data,tag,index,offset):
         cache_set_title.add_row([str(hex(mem_addr_high+offset)).rjust(4,'0'),mem_data[offset]])
     return cache_set_title
 
-def cache_HorM(cache_num,index,tag):    #返回命中cache组内偏移
+def cache_HorM(cache_set,tag):    #返回命中cache组内偏移
     for i in range(cache_line_per_set):         #遍历对应组的所有cache line 查看tag是否一致
-        if (cache_num[index][i].tag==tag):
-            if(cache_num[index][i].state!=INVALID):   #若tag一致，且状态不是无效，则命中,返回组中哪个位置的cache line命中 
-                return i
+        if (cache_set[i].tag==tag):
+            if(cache_set[i].state!=INVALID):   #若tag一致，且状态不是无效，则命中,返回组中哪个位置的cache line命中 
+                return i,cache_set[i].state
             else:                               #tag一致，状态无效，则不命中
-                return -1
+                return -1,cache_set[i].state
         else:                                   #tag 不相同继续遍历
             continue
-    return -1                                    #tag 全部不相同，不命中
+    return -1,INVALID                             #tag 全部不相同，不命中
 
-def set_avail(cache_set):
+def apply_line_in_set(cache_set,mem_list,tag,index,bus=bus()):
+    set_avail_offset=-1
+
     for i in range(cache_line_per_set):
         if(cache_set[i].state==INVALID):
-            return i    #cache组不满，返回不满位置的offset_in_set
+            set_avail_offset=i
+            break    #cache组不满
         else:
             continue
-    return -1
 
-def apply_cache_line(cache_set,mem_data,tag):
-
-    num=set_avail(cache_set) #cache 组内偏移
-    if(num==-1): #满,则随机替换
-        num=random.randint(0,cache_line_per_set-1) #0 1
+    if(set_avail_offset==-1): #set full
+        num=random.randint(0,cache_line_per_set-1)
+        set_avail_offset=num
+        old_tag=cache_set[num].tag
+        old_data=cache_set[num].data
         if(cache_set[num].state==MODIFIED):
-            mem_data=cache_set[num].data
-        cache_set[num].tag=tag
-        cache_set[num].data=mem_data
+            bus.occuied(tag=old_tag,index=index,data=old_data,broadcast=1,device_id=mem_id,data_valid=1)
+    
+    if(bus.device_id==mem_id and bus.data_valid==1):
+        mem_list[bus.tag][bus.index]=bus.data
+        bus.available()
+
+    cache_set[set_avail_offset].tag=tag
+
+    return cache_set,mem_list,set_avail_offset
+
+
+def RW(cache_num,tag):
+    none=0
+    offset_in_set,none=cache_HorM(cache_num,tag)
+    if(offset_in_set!=-1):
+        cache_num[offset_in_set].state=INVALID
+    else: 
+        pass
+    return cache_num
+
+def state_I_mem_fresh(cache_num,mem_list,bus):
+    if(bus.device_id==all_device and bus.data_valid==1):
+        cache_num[bus.index]=RW(cache_num[bus.index],bus.tag)
+        mem_list[bus.tag][bus.index]=bus.data
     else:
-        cache_set[num].tag=tag
-        cache_set[num].data=mem_data
-    return cache_set,mem_data,num
+        pass  
+
+    bus.available()
+
+    return cache_num,mem_list
+
 
 def cache_op_hit(cache_op_d,cache_op_id,mem_list,index,tag,offset_in_set_d,op,offset_num,data_i):
-    if(op==1):
-        if(cache_op_d[index][offset_in_set_d].state==EXCLUSIVE):
-            cache_op_d[index][offset_in_set_d].data[offset_num]=bin(data_i)[2:].rjust(8,'0')
+    #进入该函数的前提是cache_d命中
+    bus_0=bus()
+    # bus_0.occuied(tag=tag,index=index,broadcast=0,device_id=the_other_cache_id)
+    data=bin(data_i)[2:].rjust(8,'0')
+    if(op==1):  
+        if(cache_op_d[index][offset_in_set_d].state==EXCLUSIVE or cache_op_d[index][offset_in_set_d].state==MODIFIED):
+            cache_op_d[index][offset_in_set_d].data[offset_num]=data
             cache_op_d[index][offset_in_set_d].state=MODIFIED
-        elif(cache_op_d[index][offset_in_set_d].state==SHARED):
-            cache_op_d[index][offset_in_set_d].data[offset_num]=bin(data_i)[2:].rjust(8,'0')
-            mem_list[tag][index]=cache_op_d[index][offset_in_set_d].data
+        else: #SHARED 
+            cache_op_d[index][offset_in_set_d].data[offset_num]=data
             cache_op_d[index][offset_in_set_d].state=EXCLUSIVE
-            offset_in_set_id=cache_HorM(cache_op_id,index,tag)  
-            if(offset_in_set_id!=-1):    #其他cache命中
-                cache_op_id[index][offset_in_set_id].state=INVALID
-        else:   #处于M状态，改数据，状态不变
-            cache_op_d[index][offset_in_set_d].data[offset_num]=bin(data_i)[2:].rjust(8,'0')
-        
+            bus_0.occuied(tag=tag,index=index,data=cache_op_d[index][offset_in_set_d].data,broadcast=op,device_id=all_device,data_valid=1) 
+
+    cache_op_id,mem_list=state_I_mem_fresh(cache_op_id,mem_list,bus_0)
+
     return cache_op_d,cache_op_id,mem_list
 
+def read_from_bus(cache_op_d,cache_op_id,mem_list,tag,index,offset_in_set_d):
+    bus_0=bus()
+    bus_0.occuied(tag=tag,index=index,broadcast=0,device_id=the_other_cache_id)
+    
+    if(bus_0.broadcast==0 and bus_0.device_id==the_other_cache_id):
+        id_set_offset,id_offset_state=cache_HorM(cache_op_id[index],tag)
+        bus_0.response=id_set_offset
+        if(id_set_offset!=-1):
+            bus_0.state_response=id_offset_state
+            if(id_offset_state==MODIFIED):
+                bus_0.data_valid=1
+                bus_0.data=cache_op_id[index][id_set_offset].data
+                cache_op_id[index][id_set_offset].state=SHARED
+            else: #cache_id 处于E或S
+                cache_op_id[index][id_set_offset].state=SHARED
+    else:
+        pass
+
+    if(bus_0.response==-1 or bus_0.state_response==SHARED or bus_0.state_response==EXCLUSIVE):
+        bus_0.data=mem_list[tag][index]
+        bus_0.data_valid=1
+    elif(bus_0.state_response==MODIFIED):
+        mem_list[tag][index]=bus_0.data
+    else:
+        pass
+
+    cache_op_d[index][offset_in_set_d].data=bus_0.data
+
+    if(bus_0.response==-1):
+        cache_op_d[index][offset_in_set_d].state=EXCLUSIVE
+    else:
+        cache_op_d[index][offset_in_set_d].state=SHARED
+
+    bus_0.available()
+
+    return cache_op_d,cache_op_id,mem_list
 
 def cache_op_miss(cache_op_d,cache_op_id,mem_list,index,tag,op,offset_num,data_i):
-    cache_op_id_hit=cache_HorM(cache_op_id,index,tag) #值为其他cache命中的cache line组内偏移
-    if(op==0):
-        if(cache_op_id_hit==-1): #其他cache line也不命中
-            cache_op_d[index],mem_list[tag][index],offset_in_set=apply_cache_line(cache_op_d[index],mem_list[tag][index],tag) #在组内申请cache line，若满则随机替换，返回组内偏移
-            cache_op_d[index][offset_in_set].state=EXCLUSIVE
-        else:   #其他cache line命中
-            if(cache_op_id[index][cache_op_id_hit].state==EXCLUSIVE or SHARED):   #其他cache 是E，将其他cache的数据装入当前cache，cache状态都变为S
-                cache_op_d[index],mem_list[tag][index],offset_in_set=apply_cache_line(cache_op_d[index],mem_list[tag][index],tag)
-                cache_op_d[index][offset_in_set].data[offset_num]=cache_op_id[index][cache_op_id_hit].data[offset_num] 
-                cache_op_d[index][offset_in_set].state=SHARED
-                cache_op_id[index][cache_op_id_hit].state=SHARED
-            elif(cache_op_id[index][cache_op_id_hit].state==MODIFIED):   #其他cache 是M，将其他cache的数据装入当前cache，写入主存，cache状态都变为S
-                cache_op_d[index],mem_list[tag][index],offset_in_set=apply_cache_line(cache_op_d[index],mem_list[tag][index],tag)
-                cache_op_d[index][offset_in_set].data[offset_num]=cache_op_id[index][cache_op_id_hit].data[offset_num]
-                mem_list[tag][index]=cache_op_d[index][offset_in_set].data
-                cache_op_d[index][offset_in_set].state=SHARED
-                cache_op_id[index][cache_op_id_hit].state=SHARED   
-    else: #写不命中
-        # print('leng=',len(cache_op_d[index][2].data))
-        if(cache_op_id_hit==-1): #其他cache不命中
-            cache_op_d[index],mem_list[tag][index],offset_in_set=apply_cache_line(cache_op_d[index],mem_list[tag][index],tag)
-            cache_op_d[index][offset_in_set].data[offset_num]=bin(data_i)[2:].rjust(8,'0')
-            mem_list[tag][index]=cache_op_d[index][offset_in_set].data
-            cache_op_d[index][offset_in_set].state=EXCLUSIVE
-        else: #其他cache命中
-            if(cache_op_id[index][cache_op_id_hit].state==EXCLUSIVE or SHARED):
-                cache_op_id[index][cache_op_id_hit].state=INVALID
-                cache_op_d[index],mem_list[tag][index],offset_in_set=apply_cache_line(cache_op_d[index],mem_list[tag][index],tag)
-                cache_op_d[index][offset_in_set].data[offset_num]=bin(data_i)[2:].rjust(8,'0')
-                mem_list[tag][index]=cache_op_d[index][offset_in_set].data
-                cache_op_d[index][offset_in_set].state=EXCLUSIVE
-            else:
-                mem_list[tag][index]=cache_op_id[index][cache_op_id_hit].data #其他cache处于M状态，先将值写回主存
-                cache_op_id[index][cache_op_id_hit].state=INVALID
+    bus_1=bus()
+    data=bin(data_i)[2:].rjust(8,'0')
+    #进入该函数的前提是cache_d不命中
+    cache_op_d[index],mem_list,offset_in_set=apply_line_in_set(cache_set=cache_op_d[index],mem_list=mem_list,tag=tag,index=index)
+    cache_op_d,cache_op_id,mem_list=read_from_bus(cache_op_d,cache_op_id,mem_list,tag,index,offset_in_set)
 
-                cache_op_d[index],mem_list[tag][index],offset_in_set=apply_cache_line(cache_op_d[index],mem_list[tag][index],tag) #从主存中加载数据
-                cache_op_d[index][offset_in_set].data[offset_num]=bin(data_i)[2:].rjust(8,'0')
-                mem_list[tag][index]=cache_op_d[index][offset_in_set].data
-                cache_op_d[index][offset_in_set].data=EXCLUSIVE
+    if(op==1): #写不命中
+        cache_op_d[index][offset_in_set].state=EXCLUSIVE
+        cache_op_d[index][offset_in_set].data[offset_num]=data
+        bus_1.occuied(tag,index,data=cache_op_d[index][offset_in_set].data,broadcast=op,data_valid=1,device_id=all_device)
+    else: 
+        pass
+
+    cache_op_id,mem_list=state_I_mem_fresh(cache_op_id,mem_list,bus_1)
 
     return cache_op_d,cache_op_id,mem_list
 
@@ -204,24 +265,27 @@ cache_0=cache_set_init()
 cache_1=cache_set_init()
 mem_list=mem_init()
 
+
 for i in range(max(len(op_1),len(op_0))):
+    none=0
     index_0,tag_0,offset_0=decode_address(op_address_0[i])
     index_1,tag_1,offset_1=decode_address(op_address_1[i])
-    cache_0_hit=cache_HorM(cache_num=cache_0,index=index_0,tag=tag_0)
-    cache_1_hit=cache_HorM(cache_num=cache_1,index=index_1,tag=tag_1)
+    cache_0_hit,none=cache_HorM(cache_set=cache_0[index_0],tag=tag_0)
+    cache_1_hit,none=cache_HorM(cache_set=cache_1[index_1],tag=tag_1)
     print('第%d次cache_0操作'%(i+1), op_0[i],'地址0x%08x'%op_address_0[i])
     print('第%d次cache_1操作'%(i+1), op_1[i],'地址0x%08x\n'%op_address_1[i])
     print('第%d次cache_0操作前cache set如下'%(i+1))
     print(cache_set_print(cache_0,index_0,offset_0))
     print('第%d次cache_1操作前cache set如下'%(i+1))
-    print(cache_set_print(cache_1,index_1,offset_1),'\n')
+    print(cache_set_print(cache_0,index_0,offset_1),'\n')
     if(op_1[i]==1 and op_0[i]==0 and op_address_0[i]==op_address_1[i]):
         if(cache_1_hit!=-1):
             cache_1,cache_0,mem_list=cache_op_hit(cache_1,cache_0,mem_list,index_1,tag_1,cache_1_hit,op_1[i],offset_1,i+1)
         else:
             cache_1,cache_0,mem_list=cache_op_miss(cache_1,cache_0,mem_list,index_1,tag_1,op_1[i],offset_1,i+1)
 
-        cache_0_hit=cache_HorM(cache_num=cache_0,index=index_0,tag=tag_0)
+
+        cache_0_hit,none=cache_HorM(cache_set=cache_0[index_0],tag=tag_0)
 
         if(cache_0_hit!=-1):
             cache_0,cache_1,mem_list=cache_op_hit(cache_0,cache_1,mem_list,index_0,tag_0,cache_0_hit,op_0[i],offset_0,i+1)
@@ -230,17 +294,21 @@ for i in range(max(len(op_1),len(op_0))):
         
     else:
         if(cache_0_hit!=-1):
+            print('cache_0 hit',)
             cache_0,cache_1,mem_list=cache_op_hit(cache_0,cache_1,mem_list,index_0,tag_0,cache_0_hit,op_0[i],offset_0,i+1)
         else:
             cache_0,cache_1,mem_list=cache_op_miss(cache_0,cache_1,mem_list,index_0,tag_0,op_0[i],offset_0,i+1)
-            
-        cache_1_hit=cache_HorM(cache_num=cache_1,index=index_1,tag=tag_1)
+
+        cache_1_hit,none=cache_HorM(cache_set=cache_1[index_1],tag=tag_1)
         
+
         if(cache_1_hit!=-1):
             cache_1,cache_0,mem_list=cache_op_hit(cache_1,cache_0,mem_list,index_1,tag_1,cache_1_hit,op_1[i],offset_1,i+1)
         else:
             cache_1,cache_0,mem_list=cache_op_miss(cache_1,cache_0,mem_list,index_1,tag_1,op_1[i],offset_1,i+1)
     
+        
+
     print('第%d次cache_0操作后cache set如下'%(i+1))
     print(cache_set_print(cache_0,index_0,offset_0))
     print('第%d次cache_1操作后cache set如下'%(i+1))
