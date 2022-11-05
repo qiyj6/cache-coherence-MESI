@@ -18,16 +18,30 @@ mem_line_num=128
 mem_set_num=4 
 data_num=64
 
+
 class cache_line():
     def __init__(self, state=INVALID,tag=0x00000):
         self.state = state
         self.tag = tag
         self.data = []
+        self.list=self.cache_set_init()
     def cache_data_init(self):
         for i in range(cache_line_databyte):
             # self.data.append(bin(i)[2:].rjust(8,'0'))
             self.data.append('00000000')
+    def cache_set_init(self):
+        cache_set_list=[]
+        for i in range(set_num):
+            one_set=[]
+            cache_set_list.append(one_set)
+            for j in range(cache_line_per_set):
+                one_set.append(self)
+                cache_set_list[i][j].cache_data_init() 
+        return cache_set_list
+    
 
+c=cache_line()
+print('c data=',c[0][0].data[0])
 
 
 class bus(): #地址信号，数据信号，数据有效信号,状态信号(总线是否被占用)，读写广播信号，读写广播响应

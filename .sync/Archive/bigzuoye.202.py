@@ -18,7 +18,7 @@ mem_line_num=128
 mem_set_num=4 
 data_num=64
 
-class cache_line():
+class cache_line:
     def __init__(self, state=INVALID,tag=0x00000):
         self.state = state
         self.tag = tag
@@ -27,8 +27,6 @@ class cache_line():
         for i in range(cache_line_databyte):
             # self.data.append(bin(i)[2:].rjust(8,'0'))
             self.data.append('00000000')
-
-
 
 class bus(): #地址信号，数据信号，数据有效信号,状态信号(总线是否被占用)，读写广播信号，读写广播响应
     def __init__(self):
@@ -262,39 +260,24 @@ file_path_t1='C:/Users/zbl/Desktop/bigzuoye/trace1.txt'
 
 op_0,op_address_0=read_file(file_path_t0,op_0,op_address_0)
 op_1,op_address_1=read_file(file_path_t1,op_1,op_address_1)
-if(len(op_0)!=len(op_1)):
-    if(len(op_1)>len(op_0)):
-        op_0+=['null' for _ in range(len(op_1)-len(op_0))]
-        op_address_0+=['null'*(len(op_address_1)-len(op_address_0))]
-    else:
-        op_1+=[([3]*(len(op_0)-len(op_1)))]
-        op_address_1+=[[3]*(len(op_address_0)-len(op_address_1))]
 
 cache_0=cache_set_init()
 cache_1=cache_set_init()
 mem_list=mem_init()
 
 
-
-for i in range(len(op_0)):
+for i in range(max(len(op_1),len(op_0))):
     none=0
-    if(op_0[i]!='null'):
-        index_0,tag_0,offset_0=decode_address(op_address_0[i])
-        cache_0_hit,none=cache_HorM(cache_set=cache_0[index_0],tag=tag_0)
-        print('第%d次cache_0操作'%(i+1), op_0[i],'地址0x%08x'%op_address_0[i])
-    else:
-        print('第%d次cache_0无操作'%(i+1))
-    if(op_1[i]!='null'):
-        index_1,tag_1,offset_1=decode_address(op_address_1[i])
-        cache_1_hit,none=cache_HorM(cache_set=cache_1[index_1],tag=tag_1)
-        print('第%d次cache_1操作'%(i+1), op_1[i],'地址0x%08x\n'%op_address_1[i])
-    else:
-        print('第%d次cache_0无操作'%(i+1))
+    index_0,tag_0,offset_0=decode_address(op_address_0[i])
+    index_1,tag_1,offset_1=decode_address(op_address_1[i])
+    cache_0_hit,none=cache_HorM(cache_set=cache_0[index_0],tag=tag_0)
+    cache_1_hit,none=cache_HorM(cache_set=cache_1[index_1],tag=tag_1)
+    print('第%d次cache_0操作'%(i+1), op_0[i],'地址0x%08x'%op_address_0[i])
+    print('第%d次cache_1操作'%(i+1), op_1[i],'地址0x%08x\n'%op_address_1[i])
     print('第%d次cache_0操作前cache set如下'%(i+1))
     print(cache_set_print(cache_0,index_0,offset_0))
     print('第%d次cache_1操作前cache set如下'%(i+1))
     print(cache_set_print(cache_0,index_0,offset_1),'\n')
-
     if(op_1[i]==1 and op_0[i]==0 and op_address_0[i]==op_address_1[i]):
         if(cache_1_hit!=-1):
             cache_1,cache_0,mem_list=cache_op_hit(cache_1,cache_0,mem_list,index_1,tag_1,cache_1_hit,op_1[i],offset_1,i+1)
@@ -310,32 +293,25 @@ for i in range(len(op_0)):
             cache_0,cache_1,mem_list=cache_op_miss(cache_0,cache_1,mem_list,index_0,tag_0,op_0[i],offset_0,i+1)
         
     else:
-        if(op_0[i]!='null'):
-            if(cache_0_hit!=-1):
-                print('cache_0 hit',)
-                cache_0,cache_1,mem_list=cache_op_hit(cache_0,cache_1,mem_list,index_0,tag_0,cache_0_hit,op_0[i],offset_0,i+1)
-            else:
-                cache_0,cache_1,mem_list=cache_op_miss(cache_0,cache_1,mem_list,index_0,tag_0,op_0[i],offset_0,i+1)
+        if(cache_0_hit!=-1):
+            print('cache_0 hit',)
+            cache_0,cache_1,mem_list=cache_op_hit(cache_0,cache_1,mem_list,index_0,tag_0,cache_0_hit,op_0[i],offset_0,i+1)
+        else:
+            cache_0,cache_1,mem_list=cache_op_miss(cache_0,cache_1,mem_list,index_0,tag_0,op_0[i],offset_0,i+1)
 
         cache_1_hit,none=cache_HorM(cache_set=cache_1[index_1],tag=tag_1)
         
-        if(op_1[i]!='null'):
-            if(cache_1_hit!=-1):
-                cache_1,cache_0,mem_list=cache_op_hit(cache_1,cache_0,mem_list,index_1,tag_1,cache_1_hit,op_1[i],offset_1,i+1)
-            else:
-                cache_1,cache_0,mem_list=cache_op_miss(cache_1,cache_0,mem_list,index_1,tag_1,op_1[i],offset_1,i+1)
-        
+
+        if(cache_1_hit!=-1):
+            cache_1,cache_0,mem_list=cache_op_hit(cache_1,cache_0,mem_list,index_1,tag_1,cache_1_hit,op_1[i],offset_1,i+1)
+        else:
+            cache_1,cache_0,mem_list=cache_op_miss(cache_1,cache_0,mem_list,index_1,tag_1,op_1[i],offset_1,i+1)
+    
         
 
     print('第%d次cache_0操作后cache set如下'%(i+1))
     print(cache_set_print(cache_0,index_0,offset_0))
-    print('第%d次cache_0操作后定义位置memory数据如下'%(i+1))
-    print(mem_print(mem_list[tag_0][index_0],tag_0,index_0,offset_0))
     print('第%d次cache_1操作后cache set如下'%(i+1))
     print(cache_set_print(cache_1,index_1,offset_1))
-    print('第%d次cache_0操作后定义位置memory数据如下'%(i+1))
-    print(mem_print(mem_list[tag_1][index_1],tag_1,index_1,offset_1))
-
+    print(mem_print(mem_list[tag_0][index_0],tag_0,index_0,offset_0))
     print('#################################################### 第%d次操作分割线 ####################################################'%(i+1) )
-
-    
