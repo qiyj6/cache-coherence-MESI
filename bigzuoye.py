@@ -1,4 +1,5 @@
 import random
+import copy
 from prettytable import PrettyTable as PT
 
 INVALID='I'
@@ -25,7 +26,7 @@ class cache_line():
         self.data = []
     def cache_data_init(self):
         for i in range(cache_line_databyte):
-            # self.data.append(bin(i)[2:].rjust(8,'0'))
+            # self.data.append(bin(0)[2:].rjust(8,'0'))
             self.data.append('00000000')
 
 
@@ -159,7 +160,6 @@ def apply_line_in_set(cache_set,mem_list,tag,index,bus=bus()):
 
 
 def RW(cache_num,tag):
-    none=0
     offset_in_set,none=cache_HorM(cache_num,tag)
     if(offset_in_set!=-1):
         cache_num[offset_in_set].state=INVALID
@@ -186,18 +186,24 @@ def cache_op_hit(cache_op_d,cache_op_id,mem_list,index,tag,offset_in_set_d,op,of
     data=bin(data_i)[2:].rjust(8,'0')
     if(op==1):  
         if(cache_op_d[index][offset_in_set_d].state==EXCLUSIVE or cache_op_d[index][offset_in_set_d].state==MODIFIED):
+            old=mem_list[0x3b][2][9]
+            if(cache_op_d[index][offset_in_set_d].data==mem_list[tag][index]):
+                # cache_op_d[index][offset_in_set_d].data=copy.deepcopy(mem_list[tag][index])
+                cache_op_d[index][offset_in_set_d].data=mem_list[tag][index].copy()
             cache_op_d[index][offset_in_set_d].data[offset_num]=data
+            data_i
+            # print('cache data id',hex(id(cache_op_d[index][offset_in_set_d].data[offset_num])))
+            # print('mem list id  ',hex(id(mem_list[0x3b][2][9])))
             cache_op_d[index][offset_in_set_d].state=MODIFIED
         else: #SHARED 
             cache_op_d[index][offset_in_set_d].data[offset_num]=data
             cache_op_d[index][offset_in_set_d].state=EXCLUSIVE
-            bus_0.occuied(tag=tag,index=index,data=cache_op_d[index][offset_in_set_d].data,broadcast=op,device_id=all_device,data_valid=1) 
-
-    cache_op_id,mem_list=state_I_mem_fresh(cache_op_id,mem_list,bus_0)
+            bus_0.occuied(tag=tag,index=index,data=cache_op_d[index][offset_in_set_d].data,broadcast=op,device_id=all_device,data_valid=1)
+            cache_op_id,mem_list=state_I_mem_fresh(cache_op_id,mem_list,bus_0)
 
     return cache_op_d,cache_op_id,mem_list
 
-def read_from_bus(cache_op_d,cache_op_id,mem_list,tag,index,offset_in_set_d):
+def read_from_bus(cache_op_d,cache_op_id,mem_list,tag,index,offset_in_set_d,data_offset):
     bus_0=bus()
     bus_0.occuied(tag=tag,index=index,broadcast=0,device_id=the_other_cache_id)
     
@@ -214,17 +220,27 @@ def read_from_bus(cache_op_d,cache_op_id,mem_list,tag,index,offset_in_set_d):
                 cache_op_id[index][id_set_offset].state=SHARED
     else:
         pass
-
+    # print('cache data      ',hex(id(cache_op_d[index][offset_in_set_d].data[9])))
+    # print('mem list id     ',hex(id(mem_list[0x3b][2][9])))
     if(bus_0.response==-1 or bus_0.state_response==SHARED or bus_0.state_response==EXCLUSIVE):
-        bus_0.data=mem_list[tag][index]
+        bus_0.data=copy.deepcopy(mem_list[tag][index])
         bus_0.data_valid=1
     elif(bus_0.state_response==MODIFIED):
-        mem_list[tag][index]=bus_0.data
+        mem_list[tag][index]=bus_0.data.copy()
     else:
         pass
 
-    cache_op_d[index][offset_in_set_d].data=bus_0.data
+    # print('cache data      ',hex(id(cache_op_d[index][offset_in_set_d].data[9])))
+    # print('mem list id     ',hex(id(mem_list[0x3b][2][9])))
+    # print('bus add         ',hex(id(bus_0.data[9])),'\n')
+    # print(type(bus_0.data))
+    # print(type(cache_op_d[index][offset_in_set_d].data))
 
+    cache_op_d[index][offset_in_set_d].data=copy.deepcopy(bus_0.data)
+    # cache_op_d[index][offset_in_set_d].data[data_offset]=
+    # print('cache data      ',hex(id(cache_op_d[index][offset_in_set_d].data[9])))
+    # print('bus add         ',hex(id(bus_0.data[9])),'\n')
+    # print('mem list id     ',hex(id(mem_list[0x3b][2][9])))
     if(bus_0.response==-1):
         cache_op_d[index][offset_in_set_d].state=EXCLUSIVE
     else:
@@ -232,15 +248,19 @@ def read_from_bus(cache_op_d,cache_op_id,mem_list,tag,index,offset_in_set_d):
 
     bus_0.available()
 
-    return cache_op_d,cache_op_id,mem_list
+
+    return cache_op_d,cache_op_id
 
 def cache_op_miss(cache_op_d,cache_op_id,mem_list,index,tag,op,offset_num,data_i):
     bus_1=bus()
     data=bin(data_i)[2:].rjust(8,'0')
     #进入该函数的前提是cache_d不命中
     cache_op_d[index],mem_list,offset_in_set=apply_line_in_set(cache_set=cache_op_d[index],mem_list=mem_list,tag=tag,index=index)
-    cache_op_d,cache_op_id,mem_list=read_from_bus(cache_op_d,cache_op_id,mem_list,tag,index,offset_in_set)
-
+    # print(' miss cache data id',hex(id(cache_op_d[index][offset_in_set].data[offset_num])))
+    # print('miss mem list id  ',hex(id(mem_list[0x3b][2][9])))
+    cache_op_d,cache_op_id=read_from_bus(cache_op_d,cache_op_id,mem_list,tag,index,offset_in_set,offset_num)
+    # print(' 12312miss cache data id',hex(id(cache_op_d[index][offset_in_set].data[offset_num])))
+    # print('123132miss mem list id  ',hex(id(mem_list[0x3b][2][9])))
     if(op==1): #写不命中
         cache_op_d[index][offset_in_set].state=EXCLUSIVE
         cache_op_d[index][offset_in_set].data[offset_num]=data
@@ -249,6 +269,9 @@ def cache_op_miss(cache_op_d,cache_op_id,mem_list,index,tag,op,offset_num,data_i
         pass
 
     cache_op_id,mem_list=state_I_mem_fresh(cache_op_id,mem_list,bus_1)
+
+    # print('miss cache data id456',hex(id(cache_op_d[index][offset_in_set].data[offset_num])))
+    # print('miss mem list id  456',hex(id(mem_list[0x3b][2][9])))
 
     return cache_op_d,cache_op_id,mem_list
 
@@ -259,42 +282,61 @@ op_1=[]
 op_address_1=[]
 file_path_t0='C:/Users/zbl/Desktop/bigzuoye/trace0.txt'
 file_path_t1='C:/Users/zbl/Desktop/bigzuoye/trace1.txt'
+string_op=['读','写']
 
 op_0,op_address_0=read_file(file_path_t0,op_0,op_address_0)
 op_1,op_address_1=read_file(file_path_t1,op_1,op_address_1)
 if(len(op_0)!=len(op_1)):
     if(len(op_1)>len(op_0)):
         op_0+=['null' for _ in range(len(op_1)-len(op_0))]
-        op_address_0+=['null'*(len(op_address_1)-len(op_address_0))]
+        op_address_0+=['null' for _ in range(len(op_1)-len(op_0))]
     else:
-        op_1+=[([3]*(len(op_0)-len(op_1)))]
-        op_address_1+=[[3]*(len(op_address_0)-len(op_address_1))]
+        op_1+=['null' for _ in range(len(op_0)-len(op_1))]
+        op_address_1+=['null' for _ in range(len(op_1)-len(op_0))]
 
 cache_0=cache_set_init()
 cache_1=cache_set_init()
+# print('asdkjfkahskd',cache_0[0][0].data[9])
 mem_list=mem_init()
 
+list_1=[0,1,2]
+list_2=list_1
+list_3=copy.deepcopy(list_1)
+list_3[0]=5
+list_3[0]=0
+print(id(list_1[0]),id(list_2[0]),id(list_3[0]))
+print(id(list_1[0])==id(list_3[0]))
 
 
-for i in range(len(op_0)):
+for i in range(len(op_0)): 
     none=0
     if(op_0[i]!='null'):
         index_0,tag_0,offset_0=decode_address(op_address_0[i])
         cache_0_hit,none=cache_HorM(cache_set=cache_0[index_0],tag=tag_0)
-        print('第%d次cache_0操作'%(i+1), op_0[i],'地址0x%08x'%op_address_0[i])
+        print('第%d次'%(i+1),'cache_0%s操作'%string_op[op_0[i]],'地址0x%08x'%op_address_0[i])
+        print('第%d次cache_0操作前cache set如下'%(i+1))
+        print(cache_set_print(cache_0,index_0,offset_0))
+        print('第%d次cache_0操作前指定位置memory数据如下'%(i+1))
+        print(mem_print(mem_list[tag_0][index_0],tag_0,index_0,offset_0))
     else:
         print('第%d次cache_0无操作'%(i+1))
+    # print('cache data id 11',hex(id(cache_0[index_0][cache_0_hit].data[offset_0])))
+    # print('mem list id  556',hex(id(mem_list[0x3b][2][9])))
     if(op_1[i]!='null'):
         index_1,tag_1,offset_1=decode_address(op_address_1[i])
         cache_1_hit,none=cache_HorM(cache_set=cache_1[index_1],tag=tag_1)
-        print('第%d次cache_1操作'%(i+1), op_1[i],'地址0x%08x\n'%op_address_1[i])
+        print('第%d次'%(i+1),'cache_1%s操作'%string_op[op_1[i]],'地址0x%08x'%op_address_1[i])
+        print('第%d次cache_1操作前cache set如下'%(i+1))
+        print(cache_set_print(cache_1,index_1,offset_1))
+        print('第%d次cache_1操作前指定位置memory数据如下'%(i+1))
+        print(mem_print(mem_list[tag_1][index_1],tag_1,index_1,offset_1))
     else:
-        print('第%d次cache_0无操作'%(i+1))
-    print('第%d次cache_0操作前cache set如下'%(i+1))
-    print(cache_set_print(cache_0,index_0,offset_0))
-    print('第%d次cache_1操作前cache set如下'%(i+1))
-    print(cache_set_print(cache_0,index_0,offset_1),'\n')
+        print('第%d次cache_1无操作'%(i+1))
 
+    # print('cache data id',hex(id(cache_0[index_0][0].data[9])))
+    # print('mem list id  ',hex(id(mem_list[0x3b][2][9])))
+    print('第%d次cache_0操作前cache1 set如下'%(i+1))
+    print(cache_set_print(cache_1,index_1,offset_1))
     if(op_1[i]==1 and op_0[i]==0 and op_address_0[i]==op_address_1[i]):
         if(cache_1_hit!=-1):
             cache_1,cache_0,mem_list=cache_op_hit(cache_1,cache_0,mem_list,index_1,tag_1,cache_1_hit,op_1[i],offset_1,i+1)
@@ -312,30 +354,36 @@ for i in range(len(op_0)):
     else:
         if(op_0[i]!='null'):
             if(cache_0_hit!=-1):
-                print('cache_0 hit',)
                 cache_0,cache_1,mem_list=cache_op_hit(cache_0,cache_1,mem_list,index_0,tag_0,cache_0_hit,op_0[i],offset_0,i+1)
             else:
                 cache_0,cache_1,mem_list=cache_op_miss(cache_0,cache_1,mem_list,index_0,tag_0,op_0[i],offset_0,i+1)
-
-        cache_1_hit,none=cache_HorM(cache_set=cache_1[index_1],tag=tag_1)
+                # print('cache data id 55',hex(id(cache_0[index_0][0].data[9])))
+                # print('mem list id  555',hex(id(mem_list[0x3b][2][9])))
         
         if(op_1[i]!='null'):
+            cache_1_hit,none=cache_HorM(cache_set=cache_1[index_1],tag=tag_1)
             if(cache_1_hit!=-1):
                 cache_1,cache_0,mem_list=cache_op_hit(cache_1,cache_0,mem_list,index_1,tag_1,cache_1_hit,op_1[i],offset_1,i+1)
             else:
                 cache_1,cache_0,mem_list=cache_op_miss(cache_1,cache_0,mem_list,index_1,tag_1,op_1[i],offset_1,i+1)
         
-        
-
-    print('第%d次cache_0操作后cache set如下'%(i+1))
-    print(cache_set_print(cache_0,index_0,offset_0))
-    print('第%d次cache_0操作后定义位置memory数据如下'%(i+1))
-    print(mem_print(mem_list[tag_0][index_0],tag_0,index_0,offset_0))
-    print('第%d次cache_1操作后cache set如下'%(i+1))
+    # print('cache data id 66',hex(id(cache_0[index_0][0].data[offset_0])))
+    # print('mem list id  556',hex(id(mem_list[0x3b][2][9]))) 
+    if(op_0[i]!='null'):
+        print('第%d次cache_0操作后cache set如下'%(i+1))
+        print(cache_set_print(cache_0,index_0,offset_0))
+        print('第%d次cache_0操作后指定位置memory数据如下'%(i+1))
+        print(mem_print(mem_list[tag_0][index_0],tag_0,index_0,offset_0))
+    
+    print('第%d次cache_0操作后cache1 set如下'%(i+1))
     print(cache_set_print(cache_1,index_1,offset_1))
-    print('第%d次cache_0操作后定义位置memory数据如下'%(i+1))
-    print(mem_print(mem_list[tag_1][index_1],tag_1,index_1,offset_1))
-
+    if(op_1[i]!='null'):
+        print('第%d次cache_1操作后cache set如下'%(i+1))
+        print(cache_set_print(cache_1,index_1,offset_1))
+        print('第%d次cache_1操作后指定位置memory数据如下'%(i+1))
+        print(mem_print(mem_list[tag_1][index_1],tag_1,index_1,offset_1))
+    # print('cache data id 77',hex(id(cache_0[index_0][cache_0_hit].data[offset_0])))
+    # print('mem list id  556',hex(id(mem_list[0x3b][2][9]))) 
     print('#################################################### 第%d次操作分割线 ####################################################'%(i+1) )
 
     
